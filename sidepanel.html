@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Page Helper</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header>
+    <div class="page" id="page-title" title="">No page</div>
+    <button id="clear-btn" class="icon" title="Clear chat">⟲</button>
+    <button id="settings-btn" class="icon" title="Settings">⚙</button>
+  </header>
+
+  <form id="settings" hidden>
+    <label>Base URL
+      <input id="base-url" type="url" placeholder="https://openrouter.ai/api/v1" required>
+    </label>
+    <label>API key
+      <input id="api-key" type="password" placeholder="sk-..." autocomplete="off">
+    </label>
+    <label>Model
+      <input id="model" type="text" placeholder="deepseek/deepseek-v4.1-flash" required>
+    </label>
+    <div class="row">
+      <button type="submit">Save</button>
+      <span id="settings-status"></span>
+    </div>
+  </form>
+
+  <main id="messages">
+    <div class="empty">Ask anything about the current page.</div>
+  </main>
+
+  <footer>
+    <div class="options">
+      <label><input id="include-page" type="checkbox" checked> Include page</label>
+      <label><input id="include-shot" type="checkbox"> Include screenshot</label>
+    </div>
+    <div class="compose">
+      <textarea id="input" rows="3" placeholder="Ask about this page… (Enter to send, Shift+Enter for new line)"></textarea>
+      <button id="send-btn">Send</button>
+      <button id="stop-btn" hidden>Stop</button>
+    </div>
+  </footer>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
