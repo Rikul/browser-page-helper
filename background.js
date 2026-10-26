@@ -30,9 +30,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   chrome.sidePanel
     .open({ windowId: tab.windowId })
     .catch((err) => console.error("sidePanel.open failed:", err));
-  // Hand the selection to the panel. An open panel sees the storage change;
-  // a panel that's just opening reads it on load.
+  // Hand the selection to that window's panel. An open panel sees the storage
+  // change; a panel that's just opening reads it on load. One key per window,
+  // so hand-offs to two windows at once don't overwrite each other.
   chrome.storage.session.set({
-    pendingAsk: { windowId: tab.windowId, text: info.selectionText || "", at: Date.now() },
+    [`pendingAsk_${tab.windowId}`]: { text: info.selectionText || "", at: Date.now() },
   });
 });

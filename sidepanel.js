@@ -107,8 +107,8 @@ async function syncToActiveTab() {
 }
 
 // Another window's panel can change a tab's history (tabs can move between
-// windows). Keep this panel's cached copy in step, unless this panel is
-// streaming a reply for that tab.
+// windows). Keep this panel's cached copy in step, even mid-reply: send()
+// adds a finished reply to whatever the cache holds by then.
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "session") return;
     for (const [key, { newValue }] of Object.entries(changes)) {
@@ -116,7 +116,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
         const tabId = Number(key.slice("history_".length));
         const cached = convos.get(tabId);
         const next = newValue || [];
-        if (!cached || streams.has(tabId)) continue;
+        if (!cached) continue;
         if (JSON.stringify(cached) === JSON.stringify(next)) continue; // this panel's own save
         convos.set(tabId, next);
         if (tabId === currentTabId) {
@@ -300,13 +300,22 @@ async function send() {
         if (stream.bubble.isConnected) scrollToBottom();
     };
 
+    // Add the exchange to the tab's latest history, not the array captured at
+    // the start: another window's panel may have saved newer messages since.
+    let saved = null;
+    const record = () => {
+        if (stream.cleared) return;
+        saved = convos.get(tabId) ?? convo;
+        saved.push({ role: "user", content: text }, { role: "assistant", content: stream.reply });
+    };
+
     try {
         await streamChat(messages, stream.controller.signal, (delta) => {
             stream.reply += delta;
             if (!stream.frame) stream.frame = requestAnimationFrame(render);
         });
         render();
-        convo.push({ role: "user", content: text }, { role: "assistant", content: stream.reply });
+        record();
     } catch (err) {
         if (err.name === "AbortError") {
             render();
@@ -314,9 +323,7 @@ async function send() {
             stopped.className = "stopped";
             stopped.textContent = "(stopped)";
             stream.bubble.append(stopped);
-            if (stream.reply && !stream.cleared) {
-                convo.push({ role: "user", content: text }, { role: "assistant", content: stream.reply });
-            }
+            if (stream.reply) record();
         } else {
             cancelAnimationFrame(stream.frame);
             stream.bubble.classList.add("error");
@@ -330,7 +337,7 @@ async function send() {
             els.input.focus();
         }
     }
-    if (tabId != null && !stream.cleared) saveHistory(tabId, convo);
+    if (tabId != null && saved) saveHistory(tabId, saved);
 }
 
 // POST {baseUrl}/chat/completions with stream: true and parse the SSE stream.
@@ -395,17 +402,17 @@ els.input.addEventListener("keydown", (e) => {
 });
 
 // ---------- Right-click "Ask Page Helper about this" ----------
-// background.js stores the selection in storage.session as pendingAsk.
+// background.js stores the selection in storage.session as pendingAsk_<windowId>.
 // The panel for that window quotes it in the input, ready for a question.
 
 const PENDING_MAX_AGE = 60_000; // ignore a hand-off left over from earlier
+const pendingKey = chrome.windows.getCurrent().then((win) => `pendingAsk_${win.id}`);
 
 async function takePendingAsk() {
-    const { pendingAsk } = await chrome.storage.session.get("pendingAsk");
+    const key = await pendingKey;
+    const { [key]: pendingAsk } = await chrome.storage.session.get(key);
     if (!pendingAsk) return;
-    const win = await chrome.windows.getCurrent();
-    if (pendingAsk.windowId !== win.id) return; // meant for another window's panel
-    await chrome.storage.session.remove("pendingAsk");
+    await chrome.storage.session.remove(key);
     if (Date.now() - pendingAsk.at > PENDING_MAX_AGE) return;
 
     const text = pendingAsk.text.trim();
@@ -418,7 +425,9 @@ async function takePendingAsk() {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "session" && changes.pendingAsk?.newValue) takePendingAsk();
+    if (area !== "session") return;
+    const added = Object.entries(changes).some(([k, c]) => k.startsWith("pendingAsk_") && c.newValue);
+    if (added) takePendingAsk();
 });
 
 loadSettings();
