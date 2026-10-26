@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Chat with an AI assistant about the current page, using any OpenAI-compatible API.",
   "minimum_chrome_version": "116",
-  "permissions": ["sidePanel", "scripting", "storage", "tabs", "activeTab"],
+  "permissions": ["sidePanel", "scripting", "storage", "tabs", "activeTab", "contextMenus"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"

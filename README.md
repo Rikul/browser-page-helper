@@ -35,6 +35,10 @@ The extension calls `{Base URL}/chat/completions` with `stream: true`.
 
 The context is read again on every message, so it always matches the tab you're on. Chrome doesn't let extensions read some pages, such as `chrome://` pages, the Web Store and the built-in PDF viewer. On those, the panel answers without page context and shows a notice.
 
+## Ask about a selection
+
+Select text on a page, right-click it and choose **Ask Page Helper about this**. The panel opens, and the selection is quoted in the message box so you can type your question under it. The selection is also sent as page context, as with any message.
+
 ## Chat history
 
 Each tab has its own conversation. When you switch tabs, the panel shows that tab's chat, and the earlier messages are sent to the model as context.
@@ -54,7 +58,7 @@ Replies are shown as Markdown: headings, lists, code blocks, tables, links, bold
 | File | What it does |
 |---|---|
 | `manifest.json` | Permissions and entry points (MV3). |
-| `background.js` | Service worker. Makes the toolbar icon open the side panel. |
+| `background.js` | Service worker. Makes the toolbar icon open the side panel, and adds the right-click menu item. |
 | `sidepanel.html` / `.css` | The chat UI. |
 | `sidepanel.js` | Settings, per-tab chat history (`chrome.storage.session`), and the streaming request. |
 | `helpers.js` | Active tab lookup and page extraction (`chrome.scripting`). |

@@ -371,5 +371,33 @@ els.input.addEventListener("keydown", (e) => {
     }
 });
 
+// ---------- Right-click "Ask Page Helper about this" ----------
+// background.js stores the selection in storage.session as pendingAsk.
+// The panel for that window quotes it in the input, ready for a question.
+
+const PENDING_MAX_AGE = 60_000; // ignore a hand-off left over from earlier
+
+async function takePendingAsk() {
+    const { pendingAsk } = await chrome.storage.session.get("pendingAsk");
+    if (!pendingAsk) return;
+    const win = await chrome.windows.getCurrent();
+    if (pendingAsk.windowId !== win.id) return; // meant for another window's panel
+    await chrome.storage.session.remove("pendingAsk");
+    if (Date.now() - pendingAsk.at > PENDING_MAX_AGE) return;
+
+    const text = pendingAsk.text.trim();
+    if (!text) return;
+    const quote = text.split("\n").map((line) => `> ${line}`).join("\n");
+    els.input.value = `${quote}\n\n`;
+    els.input.focus();
+    els.input.setSelectionRange(els.input.value.length, els.input.value.length);
+    els.input.scrollTop = els.input.scrollHeight;
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "session" && changes.pendingAsk?.newValue) takePendingAsk();
+});
+
 loadSettings();
 syncToActiveTab();
+takePendingAsk();
