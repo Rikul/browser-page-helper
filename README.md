@@ -43,6 +43,11 @@ Each tab has its own conversation. When you switch tabs, the panel shows that ta
 - Each tab keeps only its latest 100 messages (`MAX_HISTORY` in `sidepanel.js`).
 - History is text only. Page content and screenshots are sent with each message but aren't saved.
 - **Clear chat** (⟲) deletes the current tab's history.
+- A reply keeps streaming if you switch tabs. Switch back to see it finish. Each tab can have its own reply in progress.
+
+## Replies
+
+Replies are shown as Markdown: headings, lists, code blocks, tables, links, bold and italic. Links open in a new tab and only `http`, `https` and `mailto` links are kept. Images in replies are shown as links, so the panel never loads remote images.
 
 ## Files
 
@@ -51,7 +56,9 @@ Each tab has its own conversation. When you switch tabs, the panel shows that ta
 | `manifest.json` | Permissions and entry points (MV3). |
 | `background.js` | Service worker. Makes the toolbar icon open the side panel. |
 | `sidepanel.html` / `.css` | The chat UI. |
-| `sidepanel.js` | Settings, per-tab chat history (`chrome.storage.session`), page extraction (`chrome.scripting`), screenshot (`chrome.tabs.captureVisibleTab`), and the streaming request. |
+| `sidepanel.js` | Settings, per-tab chat history (`chrome.storage.session`), and the streaming request. |
+| `helpers.js` | Active tab lookup and page extraction (`chrome.scripting`). |
+| `markdown.js` | Renders replies as Markdown. Builds DOM nodes directly (no `innerHTML`), so replies can't inject HTML. |
 
 ## Privacy
 

@@ -7,6 +7,7 @@
   --user: #ddf4ff;
   --accent: #0969da;
   --error: #cf222e;
+  --code-bg: rgba(175, 184, 193, 0.2);
   color-scheme: light dark;
 }
 
@@ -20,6 +21,7 @@
     --user: #12263f;
     --accent: #4493f8;
     --error: #f85149;
+    --code-bg: rgba(110, 118, 129, 0.4);
   }
 }
 
@@ -147,6 +149,70 @@ input[type="url"], input[type="text"], input[type="password"], textarea {
 }
 
 .msg.error { color: var(--error); }
+
+/* Markdown in assistant replies */
+.msg.assistant { white-space: normal; }
+.msg.assistant p,
+.msg.assistant li,
+.msg.assistant td,
+.msg.assistant th,
+.msg.assistant h1, .msg.assistant h2, .msg.assistant h3,
+.msg.assistant h4, .msg.assistant h5, .msg.assistant h6 { white-space: pre-wrap; }
+.msg.error { white-space: pre-wrap; }
+
+.msg.assistant > :first-child { margin-top: 0; }
+.msg.assistant > :last-child { margin-bottom: 0; }
+.msg.assistant p { margin: 0 0 0.6em; }
+.msg.assistant h1, .msg.assistant h2, .msg.assistant h3,
+.msg.assistant h4, .msg.assistant h5, .msg.assistant h6 {
+  margin: 0.8em 0 0.4em;
+  line-height: 1.25;
+}
+.msg.assistant h1 { font-size: 1.3em; }
+.msg.assistant h2 { font-size: 1.2em; }
+.msg.assistant h3 { font-size: 1.1em; }
+.msg.assistant h4, .msg.assistant h5, .msg.assistant h6 { font-size: 1em; }
+.msg.assistant ul, .msg.assistant ol { margin: 0 0 0.6em; padding-left: 1.4em; }
+.msg.assistant li > ul, .msg.assistant li > ol { margin-bottom: 0; }
+.msg.assistant a { color: var(--accent); }
+
+.msg.assistant code {
+  font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  background: var(--code-bg);
+}
+.msg.assistant pre {
+  margin: 0 0 0.6em;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--code-bg);
+  overflow-x: auto;
+  white-space: pre;
+}
+.msg.assistant pre code { padding: 0; background: none; }
+
+.msg.assistant blockquote {
+  margin: 0 0 0.6em;
+  padding-left: 10px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.msg.assistant hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.8em 0;
+}
+.msg.assistant .table-wrap { overflow-x: auto; margin: 0 0 0.6em; }
+.msg.assistant table { border-collapse: collapse; font-size: 0.95em; }
+.msg.assistant th, .msg.assistant td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.msg.assistant th { background: var(--code-bg); }
+.msg.assistant .stopped { margin-top: 0.6em; color: var(--muted); }
 
 .msg.notice {
   align-self: center;
