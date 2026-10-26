@@ -1,5 +1,6 @@
 // Side panel: chat UI + page context + OpenAI-compatible streaming request.
 import { getActiveTab, getPageContext } from './helpers.js';
+import { renderMarkdown } from './markdown.js';
 
 const DEFAULTS = {
     baseUrl: "https://openrouter.ai/api/v1",
@@ -31,7 +32,14 @@ let settings = { ...DEFAULTS };
 // Chat history for the active tab: [{role, content}] (text only).
 let history = [];
 let currentTabId = null;
-let controller = null;
+
+// Loaded histories by tab id. Keeping one array per tab means a reply that
+// finishes after you switch away and back is added to the chat you're seeing.
+const convos = new Map();
+
+// Replies still streaming, by tab id: { controller, userText, notices, reply, bubble, cleared }.
+// Each tab can stream its own reply; switching tabs doesn't stop it.
+const streams = new Map();
 
 // ---------- Per-tab history ----------
 // Stored in storage.session: tab ids are only valid until the browser restarts,
@@ -40,9 +48,12 @@ let controller = null;
 const historyKey = (tabId) => `history_${tabId}`;
 
 async function loadHistory(tabId) {
+    if (convos.has(tabId)) return convos.get(tabId);
     const key = historyKey(tabId);
     const stored = await chrome.storage.session.get(key);
-    return stored[key] || [];
+    // Another call may have filled the cache while this one waited.
+    if (!convos.has(tabId)) convos.set(tabId, stored[key] || []);
+    return convos.get(tabId);
 }
 
 function saveHistory(tabId, convo) {
@@ -52,12 +63,32 @@ function saveHistory(tabId, convo) {
 }
 
 function clearHistory(tabId) {
+    convos.delete(tabId);
     return chrome.storage.session.remove(historyKey(tabId));
 }
 
 function renderHistory() {
     els.messages.innerHTML = '<div class="empty">Ask anything about the current page.</div>';
     for (const m of history) addMessage(m.role, m.content);
+
+    // A reply may still be streaming for this tab: show it and keep it updating here.
+    const stream = streams.get(currentTabId);
+    if (stream) {
+        addMessage("user", stream.userText);
+        for (const msg of stream.notices) addMessage("notice", msg);
+        stream.bubble = addMessage("assistant", stream.reply, "pending");
+    }
+    setBusy(Boolean(stream));
+}
+
+function stopStream(tabId, { discard = false } = {}) {
+    const stream = streams.get(tabId);
+    if (!stream) return;
+    if (discard) {
+        stream.cleared = true; // tells send() not to save the reply
+        streams.delete(tabId); // and keeps it out of the chat from now on
+    }
+    stream.controller.abort();
 }
 
 // Point the panel at the active tab: update the title and show that tab's chat.
@@ -75,7 +106,10 @@ async function syncToActiveTab() {
     renderHistory();
 }
 
-chrome.tabs.onRemoved.addListener((tabId) => clearHistory(tabId));
+chrome.tabs.onRemoved.addListener((tabId) => {
+    stopStream(tabId, { discard: true });
+    clearHistory(tabId);
+});
 
 // ---------- Settings ----------
 
@@ -135,7 +169,8 @@ function addMessage(role, text, extraClass = "") {
     els.messages.querySelector(".empty")?.remove();
     const div = document.createElement("div");
     div.className = `msg ${role} ${extraClass}`.trim();
-    div.textContent = text;
+    if (role === "assistant") renderMarkdown(text, div);
+    else div.textContent = text;
     els.messages.appendChild(div);
     scrollToBottom();
     return div;
@@ -152,12 +187,12 @@ function setBusy(busy) {
 }
 
 els.clearBtn.addEventListener("click", () => {
-    if (controller) {
-        controller.cleared = true; // tells send() not to save the aborted reply
-        controller.abort();
-    }
+    stopStream(currentTabId, { discard: true });
     history = [];
-    if (currentTabId != null) clearHistory(currentTabId);
+    if (currentTabId != null) {
+        clearHistory(currentTabId);
+        convos.set(currentTabId, history);
+    }
     renderHistory();
 });
 
@@ -165,15 +200,42 @@ els.clearBtn.addEventListener("click", () => {
 
 async function send() {
     const text = els.input.value.trim();
-    if (!text || controller) return;
+    if (!text || streams.has(currentTabId)) return;
     if (!settings.apiKey || !settings.baseUrl || !settings.model) {
         els.settings.hidden = false;
         addMessage("notice", "Set the base URL, API key and model first.");
         return;
     }
 
+    // Pin this tab's conversation now, so the reply is saved to the right tab
+    // even if the user switches tabs while the page is read or the reply streams.
+    const tabId = currentTabId;
+    const convo = history;
+    const stream = {
+        controller: new AbortController(),
+        userText: text,
+        notices: [],
+        reply: "",
+        bubble: null,
+        cleared: false,
+        frame: 0,
+    };
+    streams.set(tabId, stream);
+
     els.input.value = "";
     addMessage("user", text);
+    stream.bubble = addMessage("assistant", "", "pending");
+    setBusy(true);
+
+    // Notices go above the reply bubble. They're kept on the stream too, so
+    // renderHistory() can show them if the user switches away and back.
+    const notice = (msg) => {
+        stream.notices.push(msg);
+        const div = document.createElement("div");
+        div.className = "msg notice";
+        div.textContent = msg;
+        stream.bubble.before(div);
+    };
 
     const tab = await getActiveTab();
     let page = null;
@@ -183,14 +245,14 @@ async function send() {
         try {
             page = await getPageContext(tab);
         } catch (err) {
-            addMessage("notice", `Can't read this page (${err.message}). Answering without it.`);
+            notice(`Can't read this page (${err.message}). Answering without it.`);
         }
     }
     if (els.includeShot.checked && tab) {
         try {
             screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
         } catch (err) {
-            addMessage("notice", `Screenshot failed (${err.message}).`);
+            notice(`Screenshot failed (${err.message}).`);
         }
     }
 
@@ -201,46 +263,51 @@ async function send() {
         ]
         : text;
 
-    // Keep a handle on this tab's conversation so the reply is saved to the
-    // right tab even if the user switches tabs while it streams.
-    const tabId = tab?.id;
-    const convo = history;
-
     const messages = [
         { role: "system", content: buildSystemPrompt(page) },
         ...convo,
         { role: "user", content: userContent },
     ];
 
-    const bubble = addMessage("assistant", "", "pending");
-    const ctl = (controller = new AbortController());
-    setBusy(true);
+    // Re-render the Markdown at most once per frame while chunks arrive.
+    const render = () => {
+        cancelAnimationFrame(stream.frame);
+        stream.frame = 0;
+        renderMarkdown(stream.reply, stream.bubble);
+        if (stream.bubble.isConnected) scrollToBottom();
+    };
 
-    let reply = "";
     try {
-        reply = await streamChat(messages, ctl.signal, (delta) => {
-            bubble.textContent += delta;
-            scrollToBottom();
+        await streamChat(messages, stream.controller.signal, (delta) => {
+            stream.reply += delta;
+            if (!stream.frame) stream.frame = requestAnimationFrame(render);
         });
-        convo.push({ role: "user", content: text }, { role: "assistant", content: reply });
+        render();
+        convo.push({ role: "user", content: text }, { role: "assistant", content: stream.reply });
     } catch (err) {
         if (err.name === "AbortError") {
-            const partial = bubble.textContent;
-            bubble.textContent = partial ? `${partial}\n\n(stopped)` : "(stopped)";
-            if (partial && !ctl.cleared) {
-                convo.push({ role: "user", content: text }, { role: "assistant", content: partial });
+            render();
+            const stopped = document.createElement("div");
+            stopped.className = "stopped";
+            stopped.textContent = "(stopped)";
+            stream.bubble.append(stopped);
+            if (stream.reply && !stream.cleared) {
+                convo.push({ role: "user", content: text }, { role: "assistant", content: stream.reply });
             }
         } else {
-            bubble.classList.add("error");
-            bubble.textContent = err.message;
+            cancelAnimationFrame(stream.frame);
+            stream.bubble.classList.add("error");
+            stream.bubble.textContent = err.message;
         }
     } finally {
-        bubble.classList.remove("pending");
-        controller = null;
-        setBusy(false);
-        els.input.focus();
+        stream.bubble.classList.remove("pending");
+        if (streams.get(tabId) === stream) streams.delete(tabId);
+        if (tabId === currentTabId && !streams.has(tabId)) {
+            setBusy(false);
+            els.input.focus();
+        }
     }
-    if (tabId != null && !ctl.cleared) saveHistory(tabId, convo);
+    if (tabId != null && !stream.cleared) saveHistory(tabId, convo);
 }
 
 // POST {baseUrl}/chat/completions with stream: true and parse the SSE stream.
@@ -296,7 +363,7 @@ async function streamChat(messages, signal, onDelta) {
 }
 
 els.sendBtn.addEventListener("click", send);
-els.stopBtn.addEventListener("click", () => controller?.abort());
+els.stopBtn.addEventListener("click", () => stopStream(currentTabId));
 els.input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
