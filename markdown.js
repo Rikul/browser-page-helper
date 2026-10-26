@@ -13,11 +13,29 @@ const HR_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 const QUOTE_RE = /^ {0,3}>/;
 const TABLE_SEP_RE = /^ *\|? *:?-+:? *(?:\| *:?-+:? *)*\|? *$/;
 
+// A closing fence is only fence characters: the same kind, at least as many.
+function isFenceClose(line, fence) {
+  const m = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+  return Boolean(m) && m[1][0] === fence[0] && m[1].length >= fence.length;
+}
+
 export function renderMarkdown(src, target) {
+  // Expand leading tabs so indentation can be counted, but not inside code
+  // fences, where tabs are content (a Makefile recipe needs its tab).
+  let fence = null;
   const lines = String(src)
     .replace(/\r\n?/g, "\n")
     .split("\n")
-    .map((l) => l.replace(/^\t+/, (t) => "    ".repeat(t.length)));
+    .map((line) => {
+      if (fence) {
+        if (isFenceClose(line, fence)) fence = null;
+        return line;
+      }
+      const expanded = line.replace(/^\t+/, (t) => "    ".repeat(t.length));
+      const open = expanded.match(FENCE_RE);
+      if (open) fence = open[1];
+      return expanded;
+    });
   target.replaceChildren(...parseBlocks(lines));
 }
 
@@ -63,7 +81,7 @@ function parseBlocks(lines) {
       const fence = m[1];
       const code = [];
       i++;
-      while (i < lines.length && !lines[i].trim().startsWith(fence)) code.push(lines[i++]);
+      while (i < lines.length && !isFenceClose(lines[i], fence)) code.push(lines[i++]);
       i++; // closing fence (missing while a reply is still streaming)
       const pre = el("pre");
       const codeEl = el("code", code.join("\n"));

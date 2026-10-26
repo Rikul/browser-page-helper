@@ -37,7 +37,7 @@ let currentTabId = null;
 // finishes after you switch away and back is added to the chat you're seeing.
 const convos = new Map();
 
-// Replies still streaming, by tab id: { controller, userText, reply, bubble, cleared }.
+// Replies still streaming, by tab id: { controller, userText, notices, reply, bubble, cleared }.
 // Each tab can stream its own reply; switching tabs doesn't stop it.
 const streams = new Map();
 
@@ -75,6 +75,7 @@ function renderHistory() {
     const stream = streams.get(currentTabId);
     if (stream) {
         addMessage("user", stream.userText);
+        for (const msg of stream.notices) addMessage("notice", msg);
         stream.bubble = addMessage("assistant", stream.reply, "pending");
     }
     setBusy(Boolean(stream));
@@ -83,7 +84,10 @@ function renderHistory() {
 function stopStream(tabId, { discard = false } = {}) {
     const stream = streams.get(tabId);
     if (!stream) return;
-    if (discard) stream.cleared = true; // tells send() not to save the reply
+    if (discard) {
+        stream.cleared = true; // tells send() not to save the reply
+        streams.delete(tabId); // and keeps it out of the chat from now on
+    }
     stream.controller.abort();
 }
 
@@ -210,6 +214,7 @@ async function send() {
     const stream = {
         controller: new AbortController(),
         userText: text,
+        notices: [],
         reply: "",
         bubble: null,
         cleared: false,
@@ -222,8 +227,10 @@ async function send() {
     stream.bubble = addMessage("assistant", "", "pending");
     setBusy(true);
 
-    // Notices go above the reply bubble, in whichever view is showing it.
+    // Notices go above the reply bubble. They're kept on the stream too, so
+    // renderHistory() can show them if the user switches away and back.
     const notice = (msg) => {
+        stream.notices.push(msg);
         const div = document.createElement("div");
         div.className = "msg notice";
         div.textContent = msg;
@@ -295,7 +302,7 @@ async function send() {
     } finally {
         stream.bubble.classList.remove("pending");
         if (streams.get(tabId) === stream) streams.delete(tabId);
-        if (tabId === currentTabId) {
+        if (tabId === currentTabId && !streams.has(tabId)) {
             setBusy(false);
             els.input.focus();
         }
