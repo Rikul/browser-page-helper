@@ -40,7 +40,7 @@ The context is read again on every message, so it always matches the tab you're 
 Each tab has its own conversation. When you switch tabs, the panel shows that tab's chat, and the earlier messages are sent to the model as context.
 
 - History lasts for the browser session. It's deleted when you close the tab or restart the browser.
-- Each tab keeps only its latest 50 messages (`MAX_HISTORY` in `sidepanel.js`).
+- Each tab keeps only its latest 100 messages (`MAX_HISTORY` in `sidepanel.js`).
 - History is text only. Page content and screenshots are sent with each message but aren't saved.
 - **Clear chat** (⟲) deletes the current tab's history.
 
