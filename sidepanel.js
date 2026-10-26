@@ -106,6 +106,26 @@ async function syncToActiveTab() {
     renderHistory();
 }
 
+// Another window's panel can change a tab's history (tabs can move between
+// windows). Keep this panel's cached copy in step, unless this panel is
+// streaming a reply for that tab.
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "session") return;
+    for (const [key, { newValue }] of Object.entries(changes)) {
+        if (!key.startsWith("history_")) continue;
+        const tabId = Number(key.slice("history_".length));
+        const cached = convos.get(tabId);
+        const next = newValue || [];
+        if (!cached || streams.has(tabId)) continue;
+        if (JSON.stringify(cached) === JSON.stringify(next)) continue; // this panel's own save
+        convos.set(tabId, next);
+        if (tabId === currentTabId) {
+            history = next;
+            renderHistory();
+        }
+    }
+});
+
 chrome.tabs.onRemoved.addListener((tabId) => {
     stopStream(tabId, { discard: true });
     clearHistory(tabId);
@@ -207,10 +227,9 @@ async function send() {
         return;
     }
 
-    // Pin this tab's conversation now, so the reply is saved to the right tab
-    // even if the user switches tabs while the page is read or the reply streams.
+    // Pin the tab now, so the reply is saved to the right tab even if the user
+    // switches tabs while the page is read or the reply streams.
     const tabId = currentTabId;
-    const convo = history;
     const stream = {
         controller: new AbortController(),
         userText: text,
@@ -236,6 +255,10 @@ async function send() {
         div.textContent = msg;
         stream.bubble.before(div);
     };
+
+    // Get this tab's conversation by id. `history` can still be the previous
+    // tab's if the panel is loading this tab's history right after a switch.
+    const convo = tabId == null ? history : await loadHistory(tabId);
 
     const tab = await getActiveTab();
     let page = null;
