@@ -52,7 +52,10 @@ els.settings.addEventListener("submit", async (e) => {
   await chrome.storage.local.set(settings);
   els.baseUrl.value = settings.baseUrl;
   els.settingsStatus.textContent = "Saved.";
-  setTimeout(() => (els.settingsStatus.textContent = ""), 1500);
+  setTimeout(() => {
+    els.settingsStatus.textContent = ""; 
+    els.settings.hidden = true;
+  }, 1500);
 });
 
 els.settingsBtn.addEventListener("click", () => {
