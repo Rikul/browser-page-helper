@@ -35,6 +35,15 @@ The extension calls `{Base URL}/chat/completions` with `stream: true`.
 
 The context is read again on every message, so it always matches the tab you're on. Chrome doesn't let extensions read some pages, such as `chrome://` pages, the Web Store and the built-in PDF viewer. On those, the panel answers without page context and shows a notice.
 
+## Chat history
+
+Each tab has its own conversation. When you switch tabs, the panel shows that tab's chat, and the earlier messages are sent to the model as context.
+
+- History lasts for the browser session. It's deleted when you close the tab or restart the browser.
+- Each tab keeps only its latest 50 messages (`MAX_HISTORY` in `sidepanel.js`).
+- History is text only. Page content and screenshots are sent with each message but aren't saved.
+- **Clear chat** (⟲) deletes the current tab's history.
+
 ## Files
 
 | File | What it does |
@@ -42,11 +51,10 @@ The context is read again on every message, so it always matches the tab you're 
 | `manifest.json` | Permissions and entry points (MV3). |
 | `background.js` | Service worker. Makes the toolbar icon open the side panel. |
 | `sidepanel.html` / `.css` | The chat UI. |
-| `sidepanel.js` | Settings, page extraction (`chrome.scripting`), screenshot (`chrome.tabs.captureVisibleTab`), and the streaming request. |
+| `sidepanel.js` | Settings, per-tab chat history (`chrome.storage.session`), page extraction (`chrome.scripting`), screenshot (`chrome.tabs.captureVisibleTab`), and the streaming request. |
 
 ## Privacy
 
 - The page content (and screenshot, if enabled) is sent to the endpoint you configure, and nowhere else.
-- The API key is stored in `chrome.storage.local` on this device.
+- The API key is stored in `chrome.storage.local` on this device. Chat history is stored in `chrome.storage.session`, which lives in memory and is cleared when the browser closes.
 - The extension asks for access to all sites (`<all_urls>`) so it can read whichever tab is active and call any API URL.
-- Chat history lives only in the open panel. Closing the panel or clicking ⟲ clears it.
