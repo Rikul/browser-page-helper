@@ -7,6 +7,7 @@ const DEFAULTS = {
 };
 const MAX_PAGE_CHARS = 30000;
 const MAX_SELECTION_CHARS = 5000;
+const MAX_HISTORY = 100; // messages per tab (50 user/assistant pairs)
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -27,9 +28,55 @@ const els = {
 };
 
 let settings = { ...DEFAULTS };
-// Chat history for this panel session: [{role, content}] (text only).
+
+// Chat history for the active tab: [{role, content}] (text only).
 let history = [];
+let currentTabId = null;
 let controller = null;
+
+// ---------- Per-tab history ----------
+// Stored in storage.session: tab ids are only valid until the browser restarts,
+// so session storage (cleared on restart) matches their lifetime.
+
+const historyKey = (tabId) => `history_${tabId}`;
+
+async function loadHistory(tabId) {
+  const key = historyKey(tabId);
+  const stored = await chrome.storage.session.get(key);
+  return stored[key] || [];
+}
+
+function saveHistory(tabId, convo) {
+  // Keep only the latest MAX_HISTORY messages (trims in place, so the live chat shrinks too).
+  convo.splice(0, Math.max(0, convo.length - MAX_HISTORY));
+  return chrome.storage.session.set({ [historyKey(tabId)]: convo });
+}
+
+function clearHistory(tabId) {
+  return chrome.storage.session.remove(historyKey(tabId));
+}
+
+function renderHistory() {
+  els.messages.innerHTML = '<div class="empty">Ask anything about the current page.</div>';
+  for (const m of history) addMessage(m.role, m.content);
+}
+
+// Point the panel at the active tab: update the title and show that tab's chat.
+async function syncToActiveTab() {
+  const tab = await getActiveTab();
+  const title = tab?.title || tab?.url || "No page";
+  els.pageTitle.textContent = title;
+  els.pageTitle.title = tab?.url || "";
+
+  if (!tab || tab.id === currentTabId) return;
+  currentTabId = tab.id;
+  const loaded = await loadHistory(tab.id);
+  if (currentTabId !== tab.id) return; // user switched again while loading
+  history = loaded;
+  renderHistory();
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => clearHistory(tabId));
 
 // ---------- Settings ----------
 
@@ -69,18 +116,11 @@ async function getActiveTab() {
   return tab;
 }
 
-async function refreshTitle() {
-  const tab = await getActiveTab();
-  const title = tab?.title || tab?.url || "No page";
-  els.pageTitle.textContent = title;
-  els.pageTitle.title = tab?.url || "";
-}
-
-chrome.tabs.onActivated.addListener(refreshTitle);
+chrome.tabs.onActivated.addListener(syncToActiveTab);
 chrome.tabs.onUpdated.addListener((_id, info, tab) => {
-  if (tab.active && (info.title || info.url || info.status === "complete")) refreshTitle();
+  if (tab.active && (info.title || info.url || info.status === "complete")) syncToActiveTab();
 });
-chrome.windows?.onFocusChanged?.addListener(refreshTitle);
+chrome.windows?.onFocusChanged?.addListener(syncToActiveTab);
 
 // Runs inside the web page: returns the rendered text the user sees.
 function extractPage() {
@@ -144,9 +184,13 @@ function setBusy(busy) {
 }
 
 els.clearBtn.addEventListener("click", () => {
-  if (controller) controller.abort();
+  if (controller) {
+    controller.cleared = true; // tells send() not to save the aborted reply
+    controller.abort();
+  }
   history = [];
-  els.messages.innerHTML = '<div class="empty">Ask anything about the current page.</div>';
+  if (currentTabId != null) clearHistory(currentTabId);
+  renderHistory();
 });
 
 // ---------- Sending ----------
@@ -189,29 +233,34 @@ async function send() {
       ]
     : text;
 
+  // Keep a handle on this tab's conversation so the reply is saved to the
+  // right tab even if the user switches tabs while it streams.
+  const tabId = tab?.id;
+  const convo = history;
+
   const messages = [
     { role: "system", content: buildSystemPrompt(page) },
-    ...history,
+    ...convo,
     { role: "user", content: userContent },
   ];
 
   const bubble = addMessage("assistant", "", "pending");
-  controller = new AbortController();
+  const ctl = (controller = new AbortController());
   setBusy(true);
 
   let reply = "";
   try {
-    reply = await streamChat(messages, controller.signal, (delta) => {
+    reply = await streamChat(messages, ctl.signal, (delta) => {
       bubble.textContent += delta;
       scrollToBottom();
     });
-    history.push({ role: "user", content: text }, { role: "assistant", content: reply });
+    convo.push({ role: "user", content: text }, { role: "assistant", content: reply });
   } catch (err) {
     if (err.name === "AbortError") {
       const partial = bubble.textContent;
       bubble.textContent = partial ? `${partial}\n\n(stopped)` : "(stopped)";
-      if (partial) {
-        history.push({ role: "user", content: text }, { role: "assistant", content: partial });
+      if (partial && !ctl.cleared) {
+        convo.push({ role: "user", content: text }, { role: "assistant", content: partial });
       }
     } else {
       bubble.classList.add("error");
@@ -223,6 +272,7 @@ async function send() {
     setBusy(false);
     els.input.focus();
   }
+  if (tabId != null && !ctl.cleared) saveHistory(tabId, convo);
 }
 
 // POST {baseUrl}/chat/completions with stream: true and parse the SSE stream.
@@ -287,4 +337,4 @@ els.input.addEventListener("keydown", (e) => {
 });
 
 loadSettings();
-refreshTitle();
+syncToActiveTab();
