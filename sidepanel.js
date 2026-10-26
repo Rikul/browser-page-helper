@@ -114,6 +114,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
     for (const [key, { newValue }] of Object.entries(changes)) {
         if (!key.startsWith("history_")) continue;
         const tabId = Number(key.slice("history_".length));
+        // Another panel cleared this tab's chat: don't save a reply this panel
+        // is still streaming for it.
+        if (newValue === undefined && streams.has(tabId)) streams.get(tabId).cleared = true;
         const cached = convos.get(tabId);
         const next = newValue || [];
         if (!cached) continue;
@@ -418,7 +421,9 @@ async function takePendingAsk() {
     const text = pendingAsk.text.trim();
     if (!text) return;
     const quote = text.split("\n").map((line) => `> ${line}`).join("\n");
-    els.input.value = `${quote}\n\n`;
+    // Keep anything already typed, and add the quote below it.
+    const draft = els.input.value.trimEnd();
+    els.input.value = draft ? `${draft}\n\n${quote}\n\n` : `${quote}\n\n`;
     els.input.focus();
     els.input.setSelectionRange(els.input.value.length, els.input.value.length);
     els.input.scrollTop = els.input.scrollHeight;
