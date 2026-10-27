@@ -1,22 +1,6 @@
 /* Page Helper: a reading companion. Questions are marked like highlighter on
-   a page; replies are set in Literata, a typeface made for reading on screens.
+   a page; replies are set in the system's reading serif.
    The highlighter is the one loud thing; everything else stays quiet. */
-
-@font-face {
-  font-family: "Literata";
-  font-style: normal;
-  font-weight: 400 700;
-  font-display: swap;
-  src: url("fonts/literata-latin.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Literata";
-  font-style: italic;
-  font-weight: 400 700;
-  font-display: swap;
-  src: url("fonts/literata-latin-italic.woff2") format("woff2");
-}
 
 :root {
   --paper: #fcfcfd;
@@ -32,7 +16,7 @@
   --error: #c3261c;
   --code-bg: #eef0f3;
 
-  --serif: "Literata", Georgia, serif;
+  --serif: "Iowan Old Style", Charter, "Sitka Text", Cambria, Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 

@@ -63,7 +63,6 @@ Replies are shown as Markdown: headings, lists, code blocks, tables, links, bold
 | `sidepanel.js` | Settings, per-tab chat history (`chrome.storage.session`), and the streaming request. |
 | `helpers.js` | Active tab lookup and page extraction (`chrome.scripting`). |
 | `markdown.js` | Renders replies as Markdown. Builds DOM nodes directly (no `innerHTML`), so replies can't inject HTML. |
-| `fonts/` | Literata (SIL Open Font License, see `fonts/OFL.txt`), bundled so the panel loads no remote fonts. |
 
 ## Privacy
 
