@@ -23,7 +23,6 @@ const els = {
     settingsCancel: $("settings-cancel"),
     emptyTpl: $("empty-tpl"),
     messages: $("messages"),
-    includePage: $("include-page"),
     includeShot: $("include-shot"),
     markdown: $("markdown"),
     input: $("input"),
@@ -374,7 +373,7 @@ async function send() {
     let page = null;
     let screenshot = null;
 
-    if (els.includePage.checked && tab) {
+    if (tab) {
         try {
             page = await getPageContext(tab);
         } catch (err) {
