@@ -187,18 +187,24 @@ els.settings.addEventListener("keydown", (e) => {
     if (e.key === "Escape") showSettings(false);
 });
 
-// ---------- Markdown on/off ----------
-// Saved separately from the API settings. On by default.
+// ---------- Send Screenshot / Render Markdown ----------
+// Both remembered in storage.local, separately from the API settings. On by default.
 
-async function loadMarkdownPref() {
-    const { markdown = true } = await chrome.storage.local.get("markdown");
+async function loadOptionPrefs() {
+    const { markdown = true, screenshot = true } =
+        await chrome.storage.local.get(["markdown", "screenshot"]);
     els.markdown.checked = markdown;
+    els.includeShot.checked = screenshot;
     rerenderReplies();
 }
 
 els.markdown.addEventListener("change", () => {
     chrome.storage.local.set({ markdown: els.markdown.checked });
     rerenderReplies();
+});
+
+els.includeShot.addEventListener("change", () => {
+    chrome.storage.local.set({ screenshot: els.includeShot.checked });
 });
 
 // ---------- Current tab ----------
@@ -545,6 +551,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 renderHistory();
 loadSettings();
-loadMarkdownPref();
+loadOptionPrefs();
 syncToActiveTab();
 takePendingAsk();
