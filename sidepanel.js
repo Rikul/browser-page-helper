@@ -190,20 +190,25 @@ els.settings.addEventListener("keydown", (e) => {
 // ---------- Send Screenshot / Render Markdown ----------
 // Both remembered in storage.local, separately from the API settings. On by default.
 
+// Options the user changed before the saved values loaded; those clicks win.
+const touched = new Set();
+
 async function loadOptionPrefs() {
     const { markdown = true, screenshot = true } =
         await chrome.storage.local.get(["markdown", "screenshot"]);
-    els.markdown.checked = markdown;
-    els.includeShot.checked = screenshot;
+    if (!touched.has("markdown")) els.markdown.checked = markdown;
+    if (!touched.has("screenshot")) els.includeShot.checked = screenshot;
     rerenderReplies();
 }
 
 els.markdown.addEventListener("change", () => {
+    touched.add("markdown");
     chrome.storage.local.set({ markdown: els.markdown.checked });
     rerenderReplies();
 });
 
 els.includeShot.addEventListener("change", () => {
+    touched.add("screenshot");
     chrome.storage.local.set({ screenshot: els.includeShot.checked });
 });
 
@@ -237,6 +242,8 @@ function addMessage(role, text, extraClass = "") {
     els.messages.querySelector(".empty")?.remove();
     const div = document.createElement("div");
     div.className = `msg ${role} ${extraClass}`.trim();
+    // Screen readers wait for a streaming reply to finish before reading it.
+    if (extraClass.includes("pending")) div.setAttribute("aria-busy", "true");
     if (role === "assistant") {
         const content = document.createElement("div");
         content.className = "content";
@@ -316,7 +323,9 @@ function setBusy(busy) {
 els.messages.addEventListener("click", (e) => {
     const btn = e.target.closest(".suggestion");
     if (!btn) return;
-    els.input.value = btn.textContent;
+    // Keep anything already typed (such as a quoted selection) and add the prompt below it.
+    const draft = els.input.value.trimEnd();
+    els.input.value = draft ? `${draft}\n\n${btn.textContent}` : btn.textContent;
     send();
 });
 
@@ -333,6 +342,10 @@ els.clearBtn.addEventListener("click", () => {
 // ---------- Sending ----------
 
 async function send() {
+    // Don't send until the saved options and the active tab are known, so a
+    // quick first message uses the saved Send Screenshot choice and is saved
+    // to the right tab.
+    await ready;
     const text = els.input.value.trim();
     if (!text || streams.has(currentTabId)) return;
     if (!settings.apiKey || !settings.baseUrl || !settings.model) {
@@ -375,7 +388,10 @@ async function send() {
     // tab's if the panel is loading this tab's history right after a switch.
     const convo = tabId == null ? history : await loadHistory(tabId);
 
-    const tab = await getActiveTab();
+    // Read the tab this question belongs to, which may no longer be the active one.
+    const tab = tabId == null
+        ? await getActiveTab()
+        : await chrome.tabs.get(tabId).catch(() => null);
     let page = null;
     let screenshot = null;
 
@@ -386,7 +402,10 @@ async function send() {
             notice(`Can't read this page (${err.message}). Answering without it.`);
         }
     }
-    if (els.includeShot.checked && tab) {
+    if (els.includeShot.checked && tab && !tab.active) {
+        // captureVisibleTab can only see the active tab.
+        notice("Skipped the screenshot because you switched tabs.");
+    } else if (els.includeShot.checked && tab) {
         try {
             screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
         } catch (err) {
@@ -457,6 +476,7 @@ async function send() {
         }
     } finally {
         stream.bubble.classList.remove("pending");
+        stream.bubble.removeAttribute("aria-busy");
         if (streams.get(tabId) === stream) streams.delete(tabId);
         if (tabId === currentTabId && !streams.has(tabId)) {
             setBusy(false);
@@ -576,6 +596,5 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 renderHistory();
 loadSettings();
-loadOptionPrefs();
-syncToActiveTab();
+const ready = Promise.all([loadOptionPrefs(), syncToActiveTab()]).catch(() => {});
 takePendingAsk();
