@@ -394,17 +394,18 @@ async function send() {
         }
     }
 
-    const userContent = screenshot
-        ? [
-            { type: "text", text },
-            { type: "image_url", image_url: { url: screenshot } },
-        ]
-        : text;
-
-    const messages = [
+    const buildMessages = (withScreenshot) => [
         { role: "system", content: buildSystemPrompt(page) },
         ...convo,
-        { role: "user", content: userContent },
+        {
+            role: "user",
+            content: withScreenshot
+                ? [
+                    { type: "text", text },
+                    { type: "image_url", image_url: { url: screenshot } },
+                ]
+                : text,
+        },
     ];
 
     // Re-render the Markdown at most once per frame while chunks arrive.
@@ -424,11 +425,21 @@ async function send() {
         saved.push({ role: "user", content: text }, { role: "assistant", content: stream.reply });
     };
 
+    const onDelta = (delta) => {
+        stream.reply += delta;
+        if (!stream.frame) stream.frame = requestAnimationFrame(render);
+    };
+
     try {
-        await streamChat(messages, stream.controller.signal, (delta) => {
-            stream.reply += delta;
-            if (!stream.frame) stream.frame = requestAnimationFrame(render);
-        });
+        try {
+            await streamChat(buildMessages(Boolean(screenshot)), stream.controller.signal, onDelta);
+        } catch (err) {
+            // Many models don't take images and reject the whole request.
+            // Ask again with the page text only, and say why.
+            if (!screenshot || stream.reply || !rejectsInput(err)) throw err;
+            notice("This model doesn't accept screenshots, so it answered from the page text only. Uncheck Send Screenshot to skip this.");
+            await streamChat(buildMessages(false), stream.controller.signal, onDelta);
+        }
         render();
         record();
     } catch (err) {
@@ -455,6 +466,14 @@ async function send() {
     if (tabId != null && saved) saveHistory(tabId, saved);
 }
 
+// Request errors that can mean "this model can't take this input" (an image),
+// as opposed to auth, rate limit or server errors, which a retry won't fix.
+const INPUT_REJECTED = new Set([400, 404, 413, 415, 422]);
+
+function rejectsInput(err) {
+    return INPUT_REJECTED.has(err.status);
+}
+
 // POST {baseUrl}/chat/completions with stream: true and parse the SSE stream.
 // Calls onDelta(text) per chunk; resolves with the full reply.
 async function streamChat(messages, signal, onDelta) {
@@ -470,7 +489,9 @@ async function streamChat(messages, signal, onDelta) {
 
     if (!res.ok) {
         const body = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status} ${res.statusText}\n${body}`.trim());
+        const err = new Error(`HTTP ${res.status} ${res.statusText}\n${body}`.trim());
+        err.status = res.status;
+        throw err;
     }
 
     const reader = res.body.getReader();
@@ -496,7 +517,11 @@ async function streamChat(messages, signal, onDelta) {
             } catch {
                 continue;
             }
-            if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
+            if (json.error) {
+                const err = new Error(json.error.message || JSON.stringify(json.error));
+                err.status = Number(json.error.code) || undefined;
+                throw err;
+            }
             const delta = json.choices?.[0]?.delta?.content;
             if (delta) {
                 full += delta;

@@ -31,7 +31,7 @@ The extension calls `{Base URL}/chat/completions` with `stream: true`.
 ## Page context
 
 - **Page text** (always sent): the page title, URL, any selected text, and the *rendered* text of the page (`document.body.innerText`, which is what's visible, without scripts or markup), capped at 30k characters.
-- **Send Screenshot** (on by default, remembered): also sends a PNG of the visible part of the tab as an `image_url`. Turn it off if your model can't read images.
+- **Send Screenshot** (on by default, remembered): also sends a PNG of the visible part of the tab as an `image_url`. If the model rejects the image, the panel asks again with the page text only and shows a notice. Turn it off to skip that extra request.
 
 The context is read again on every message, so it always matches the tab you're on. Chrome doesn't let extensions read some pages, such as `chrome://` pages, the Web Store and the built-in PDF viewer. On those, the panel answers without page context and shows a notice.
 
