@@ -30,7 +30,7 @@ The extension calls `{Base URL}/chat/completions` with `stream: true`.
 
 ## Page context
 
-- **Page** (on by default): sends the page title, URL, any selected text, and the *rendered* text of the page (`document.body.innerText`, which is what's visible, without scripts or markup), capped at 30k characters.
+- **Page text** (on by default): sends the page title, URL, any selected text, and the *rendered* text of the page (`document.body.innerText`, which is what's visible, without scripts or markup), capped at 30k characters.
 - **Screenshot** (off by default): also sends a PNG of the visible part of the tab as an `image_url`. Use this with a vision-capable model when layout or images matter.
 
 The context is read again on every message, so it always matches the tab you're on. Chrome doesn't let extensions read some pages, such as `chrome://` pages, the Web Store and the built-in PDF viewer. On those, the panel answers without page context and shows a notice.
@@ -63,6 +63,7 @@ Replies are shown as Markdown: headings, lists, code blocks, tables, links, bold
 | `sidepanel.js` | Settings, per-tab chat history (`chrome.storage.session`), and the streaming request. |
 | `helpers.js` | Active tab lookup and page extraction (`chrome.scripting`). |
 | `markdown.js` | Renders replies as Markdown. Builds DOM nodes directly (no `innerHTML`), so replies can't inject HTML. |
+| `fonts/` | Literata (SIL Open Font License, see `fonts/OFL.txt`), bundled so the panel loads no remote fonts. |
 
 ## Privacy
 

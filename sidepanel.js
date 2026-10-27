@@ -237,6 +237,12 @@ function addMessage(role, text, extraClass = "") {
         content.className = "content";
         div.append(content, replyActions(div));
         renderReply(div, text);
+    } else if (role === "user") {
+        // Wrapped in a span so the highlight follows the text across lines.
+        const mark = document.createElement("span");
+        mark.className = "mark";
+        mark.textContent = text;
+        div.append(mark);
     } else {
         div.textContent = text;
     }
@@ -346,7 +352,7 @@ async function send() {
 
     els.input.value = "";
     autosize();
-    addMessage("user", text);
+    addMessage("user", text, "fresh");
     stream.bubble = addMessage("assistant", "", "pending");
     setBusy(true);
 

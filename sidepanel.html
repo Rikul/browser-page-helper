@@ -22,8 +22,8 @@
 
   <form id="settings" hidden>
     <div class="settings-head">
-      <strong>Settings</strong>
-      <span class="hint">Any OpenAI-compatible API</span>
+      <h2>Connection</h2>
+      <p>Works with any OpenAI-compatible API.</p>
     </div>
     <label>Base URL
       <input id="base-url" type="url" placeholder="https://openrouter.ai/api/v1" required>
@@ -35,7 +35,7 @@
       <input id="model" type="text" placeholder="deepseek/deepseek-v4.1-flash" required>
     </label>
     <div class="row">
-      <button type="submit" class="primary">Save</button>
+      <button type="submit" class="primary">Save settings</button>
       <button type="button" id="settings-cancel" class="ghost">Close</button>
       <span id="settings-status" role="status"></span>
     </div>
@@ -45,40 +45,36 @@
 
   <template id="empty-tpl">
     <div class="empty">
-      <div class="empty-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      </div>
-      <p>Ask anything about the current page.</p>
+      <h1>What would you like to know about this page?</h1>
       <div class="suggestions">
-        <button type="button" class="suggestion">Summarize this page</button>
-        <button type="button" class="suggestion">What are the key takeaways?</button>
-        <button type="button" class="suggestion">Explain this in simple terms</button>
+        <button type="button" class="suggestion"><span>Summarize this page</span></button>
+        <button type="button" class="suggestion"><span>List the key points</span></button>
+        <button type="button" class="suggestion"><span>Explain it in plain language</span></button>
       </div>
     </div>
   </template>
 
   <footer>
-    <div class="options" role="group" aria-label="Reply options">
+    <div class="options" role="group" aria-label="What to send and how to show replies">
       <label class="chip" title="Send the page's text with your question">
-        <input id="include-page" type="checkbox" checked> Page
+        <input id="include-page" type="checkbox" checked> Page text
       </label>
       <label class="chip" title="Send a screenshot of the visible tab (needs a vision model)">
         <input id="include-shot" type="checkbox"> Screenshot
       </label>
-      <label class="chip" title="Show replies as formatted Markdown">
+      <label class="chip" title="Show replies with formatting. Turn off to see the raw text.">
         <input id="markdown" type="checkbox" checked> Markdown
       </label>
     </div>
     <div class="compose">
-      <textarea id="input" rows="1" placeholder="Ask about this page…" aria-label="Message"></textarea>
-      <button id="send-btn" class="send" title="Send (Enter)" aria-label="Send">
+      <textarea id="input" rows="1" placeholder="Ask about this page" aria-label="Message" title="Enter sends. Shift+Enter adds a line."></textarea>
+      <button id="send-btn" class="send" title="Send" aria-label="Send">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
       </button>
       <button id="stop-btn" class="send stop" title="Stop" aria-label="Stop" hidden>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
       </button>
     </div>
-    <div class="hint">Enter to send · Shift+Enter for a new line</div>
   </footer>
 
   <script type="module" src="sidepanel.js"></script>
