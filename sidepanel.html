@@ -8,12 +8,23 @@
 </head>
 <body>
   <header>
-    <div class="page" id="page-title" title="">No page</div>
-    <button id="clear-btn" class="icon" title="Clear chat">⟲</button>
-    <button id="settings-btn" class="icon" title="Settings">⚙</button>
+    <div class="page">
+      <div class="page-title" id="page-title">No page</div>
+      <div class="page-host" id="page-host"></div>
+    </div>
+    <button id="clear-btn" class="icon" title="Clear chat" aria-label="Clear chat">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+    </button>
+    <button id="settings-btn" class="icon" title="Settings" aria-label="Settings" aria-expanded="false" aria-controls="settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.6a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.6a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
   </header>
 
   <form id="settings" hidden>
+    <div class="settings-head">
+      <strong>Settings</strong>
+      <span class="hint">Any OpenAI-compatible API</span>
+    </div>
     <label>Base URL
       <input id="base-url" type="url" placeholder="https://openrouter.ai/api/v1" required>
     </label>
@@ -24,25 +35,50 @@
       <input id="model" type="text" placeholder="deepseek/deepseek-v4.1-flash" required>
     </label>
     <div class="row">
-      <button type="submit">Save</button>
-      <span id="settings-status"></span>
+      <button type="submit" class="primary">Save</button>
+      <button type="button" id="settings-cancel" class="ghost">Close</button>
+      <span id="settings-status" role="status"></span>
     </div>
   </form>
 
-  <main id="messages">
-    <div class="empty">Ask anything about the current page.</div>
-  </main>
+  <main id="messages" aria-live="polite"></main>
+
+  <template id="empty-tpl">
+    <div class="empty">
+      <div class="empty-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </div>
+      <p>Ask anything about the current page.</p>
+      <div class="suggestions">
+        <button type="button" class="suggestion">Summarize this page</button>
+        <button type="button" class="suggestion">What are the key takeaways?</button>
+        <button type="button" class="suggestion">Explain this in simple terms</button>
+      </div>
+    </div>
+  </template>
 
   <footer>
-    <div class="options">
-      <label><input id="include-page" type="checkbox" checked> Include page</label>
-      <label><input id="include-shot" type="checkbox"> Include screenshot</label>
+    <div class="options" role="group" aria-label="Reply options">
+      <label class="chip" title="Send the page's text with your question">
+        <input id="include-page" type="checkbox" checked> Page
+      </label>
+      <label class="chip" title="Send a screenshot of the visible tab (needs a vision model)">
+        <input id="include-shot" type="checkbox"> Screenshot
+      </label>
+      <label class="chip" title="Show replies as formatted Markdown">
+        <input id="markdown" type="checkbox" checked> Markdown
+      </label>
     </div>
     <div class="compose">
-      <textarea id="input" rows="3" placeholder="Ask about this page… (Enter to send, Shift+Enter for new line)"></textarea>
-      <button id="send-btn">Send</button>
-      <button id="stop-btn" hidden>Stop</button>
+      <textarea id="input" rows="1" placeholder="Ask about this page…" aria-label="Message"></textarea>
+      <button id="send-btn" class="send" title="Send (Enter)" aria-label="Send">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+      </button>
+      <button id="stop-btn" class="send stop" title="Stop" aria-label="Stop" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
+      </button>
     </div>
+    <div class="hint">Enter to send · Shift+Enter for a new line</div>
   </footer>
 
   <script type="module" src="sidepanel.js"></script>

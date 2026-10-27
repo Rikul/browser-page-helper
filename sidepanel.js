@@ -12,6 +12,7 @@ const MAX_HISTORY = 100; // messages per tab (50 user/assistant pairs)
 const $ = (id) => document.getElementById(id);
 const els = {
     pageTitle: $("page-title"),
+    pageHost: $("page-host"),
     settingsBtn: $("settings-btn"),
     clearBtn: $("clear-btn"),
     settings: $("settings"),
@@ -19,9 +20,12 @@ const els = {
     apiKey: $("api-key"),
     model: $("model"),
     settingsStatus: $("settings-status"),
+    settingsCancel: $("settings-cancel"),
+    emptyTpl: $("empty-tpl"),
     messages: $("messages"),
     includePage: $("include-page"),
     includeShot: $("include-shot"),
+    markdown: $("markdown"),
     input: $("input"),
     sendBtn: $("send-btn"),
     stopBtn: $("stop-btn"),
@@ -68,7 +72,7 @@ function clearHistory(tabId) {
 }
 
 function renderHistory() {
-    els.messages.innerHTML = '<div class="empty">Ask anything about the current page.</div>';
+    els.messages.replaceChildren(els.emptyTpl.content.cloneNode(true));
     for (const m of history) addMessage(m.role, m.content);
 
     // A reply may still be streaming for this tab: show it and keep it updating here.
@@ -91,12 +95,23 @@ function stopStream(tabId, { discard = false } = {}) {
     stream.controller.abort();
 }
 
+function hostOf(url) {
+    try {
+        const u = new URL(url);
+        return u.protocol.startsWith("http") ? u.hostname : u.protocol.replace(":", "");
+    } catch {
+        return "";
+    }
+}
+
 // Point the panel at the active tab: update the title and show that tab's chat.
 async function syncToActiveTab() {
     const tab = await getActiveTab();
     const title = tab?.title || tab?.url || "No page";
     els.pageTitle.textContent = title;
-    els.pageTitle.title = tab?.url || "";
+    els.pageTitle.title = title;
+    els.pageHost.textContent = hostOf(tab?.url);
+    els.pageHost.title = tab?.url || "";
 
     if (!tab || tab.id === currentTabId) return;
     currentTabId = tab.id;
@@ -142,7 +157,13 @@ async function loadSettings() {
     els.baseUrl.value = settings.baseUrl;
     els.apiKey.value = settings.apiKey;
     els.model.value = settings.model;
-    if (!settings.apiKey) els.settings.hidden = false;
+    if (!settings.apiKey) showSettings(true);
+}
+
+function showSettings(show) {
+    els.settings.hidden = !show;
+    els.settingsBtn.setAttribute("aria-expanded", String(show));
+    if (show) els.baseUrl.focus();
 }
 
 els.settings.addEventListener("submit", async (e) => {
@@ -157,12 +178,28 @@ els.settings.addEventListener("submit", async (e) => {
     els.settingsStatus.textContent = "Saved.";
     setTimeout(() => {
         els.settingsStatus.textContent = "";
-        els.settings.hidden = true;
-    }, 1500);
+        showSettings(false);
+    }, 1200);
 });
 
-els.settingsBtn.addEventListener("click", () => {
-    els.settings.hidden = !els.settings.hidden;
+els.settingsBtn.addEventListener("click", () => showSettings(els.settings.hidden));
+els.settingsCancel.addEventListener("click", () => showSettings(false));
+els.settings.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") showSettings(false);
+});
+
+// ---------- Markdown on/off ----------
+// Saved separately from the API settings. On by default.
+
+async function loadMarkdownPref() {
+    const { markdown = true } = await chrome.storage.local.get("markdown");
+    els.markdown.checked = markdown;
+    rerenderReplies();
+}
+
+els.markdown.addEventListener("change", () => {
+    chrome.storage.local.set({ markdown: els.markdown.checked });
+    rerenderReplies();
 });
 
 // ---------- Current tab ----------
@@ -188,15 +225,70 @@ function buildSystemPrompt(page) {
 
 // ---------- Messages UI ----------
 
+// Raw text of each assistant bubble, so it can be re-rendered or copied.
+const replyText = new WeakMap();
+
 function addMessage(role, text, extraClass = "") {
     els.messages.querySelector(".empty")?.remove();
     const div = document.createElement("div");
     div.className = `msg ${role} ${extraClass}`.trim();
-    if (role === "assistant") renderMarkdown(text, div);
-    else div.textContent = text;
+    if (role === "assistant") {
+        const content = document.createElement("div");
+        content.className = "content";
+        div.append(content, replyActions(div));
+        renderReply(div, text);
+    } else {
+        div.textContent = text;
+    }
     els.messages.appendChild(div);
     scrollToBottom();
     return div;
+}
+
+// Render a reply as Markdown or plain text, depending on the toggle.
+function renderReply(bubble, text) {
+    replyText.set(bubble, text);
+    const content = bubble.querySelector(".content");
+    if (!content) return; // bubble was replaced by an error
+    const md = els.markdown.checked;
+    content.className = `content ${md ? "md" : "plain"}`;
+    if (md) renderMarkdown(text, content);
+    else content.textContent = text;
+}
+
+function rerenderReplies() {
+    for (const bubble of els.messages.querySelectorAll(".msg.assistant")) {
+        if (replyText.has(bubble)) renderReply(bubble, replyText.get(bubble));
+    }
+}
+
+const COPY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const CHECK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+function replyActions(bubble) {
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.title = "Copy reply";
+    copy.innerHTML = `${COPY_ICON}<span>Copy</span>`; // static markup, no model text
+    copy.addEventListener("click", async () => {
+        try {
+            await navigator.clipboard.writeText(replyText.get(bubble) || "");
+            copy.innerHTML = `${CHECK_ICON}<span>Copied</span>`;
+        } catch {
+            copy.lastChild.textContent = "Copy failed";
+        }
+        setTimeout(() => (copy.innerHTML = `${COPY_ICON}<span>Copy</span>`), 1500);
+    });
+    actions.append(copy);
+    return actions;
+}
+
+// Grow the message box with its text, up to the CSS max-height.
+function autosize() {
+    els.input.style.height = "auto";
+    els.input.style.height = `${els.input.scrollHeight}px`;
 }
 
 function scrollToBottom() {
@@ -208,6 +300,14 @@ function setBusy(busy) {
     els.stopBtn.hidden = !busy;
     els.input.disabled = busy;
 }
+
+// Starter prompts in the empty chat.
+els.messages.addEventListener("click", (e) => {
+    const btn = e.target.closest(".suggestion");
+    if (!btn) return;
+    els.input.value = btn.textContent;
+    send();
+});
 
 els.clearBtn.addEventListener("click", () => {
     stopStream(currentTabId, { discard: true });
@@ -225,7 +325,7 @@ async function send() {
     const text = els.input.value.trim();
     if (!text || streams.has(currentTabId)) return;
     if (!settings.apiKey || !settings.baseUrl || !settings.model) {
-        els.settings.hidden = false;
+        showSettings(true);
         addMessage("notice", "Set the base URL, API key and model first.");
         return;
     }
@@ -245,6 +345,7 @@ async function send() {
     streams.set(tabId, stream);
 
     els.input.value = "";
+    autosize();
     addMessage("user", text);
     stream.bubble = addMessage("assistant", "", "pending");
     setBusy(true);
@@ -299,7 +400,7 @@ async function send() {
     const render = () => {
         cancelAnimationFrame(stream.frame);
         stream.frame = 0;
-        renderMarkdown(stream.reply, stream.bubble);
+        renderReply(stream.bubble, stream.reply);
         if (stream.bubble.isConnected) scrollToBottom();
     };
 
@@ -325,11 +426,11 @@ async function send() {
             const stopped = document.createElement("div");
             stopped.className = "stopped";
             stopped.textContent = "(stopped)";
-            stream.bubble.append(stopped);
+            stream.bubble.querySelector(".actions").before(stopped);
             if (stream.reply) record();
         } else {
             cancelAnimationFrame(stream.frame);
-            stream.bubble.classList.add("error");
+            stream.bubble.className = "msg error";
             stream.bubble.textContent = err.message;
         }
     } finally {
@@ -397,6 +498,7 @@ async function streamChat(messages, signal, onDelta) {
 
 els.sendBtn.addEventListener("click", send);
 els.stopBtn.addEventListener("click", () => stopStream(currentTabId));
+els.input.addEventListener("input", autosize);
 els.input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
@@ -426,6 +528,7 @@ async function takePendingAsk() {
     els.input.value = draft ? `${draft}\n\n${quote}\n\n` : `${quote}\n\n`;
     els.input.focus();
     els.input.setSelectionRange(els.input.value.length, els.input.value.length);
+    autosize();
     els.input.scrollTop = els.input.scrollHeight;
 }
 
@@ -435,6 +538,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (added) takePendingAsk();
 });
 
+renderHistory();
 loadSettings();
+loadMarkdownPref();
 syncToActiveTab();
 takePendingAsk();

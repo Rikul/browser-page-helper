@@ -14,7 +14,7 @@ There's no build step and there are no dependencies. It's plain HTML, CSS and JS
 2. Turn on **Developer mode** (top right).
 3. Click **Load unpacked** and choose this folder.
 4. Pin the extension, then click its toolbar icon to open the side panel.
-5. Click ⚙ and set the **Base URL**, **API key** and **Model**, then click **Save**.
+5. Click the gear icon and set the **Base URL**, **API key** and **Model**, then click **Save**.
 
 After you change the code, click the reload icon on the extension's card in `chrome://extensions` and reopen the panel.
 
@@ -30,8 +30,8 @@ The extension calls `{Base URL}/chat/completions` with `stream: true`.
 
 ## Page context
 
-- **Include page** (on by default): sends the page title, URL, any selected text, and the *rendered* text of the page (`document.body.innerText`, which is what's visible, without scripts or markup), capped at 30k characters.
-- **Include screenshot** (off by default): also sends a PNG of the visible part of the tab as an `image_url`. Use this with a vision-capable model when layout or images matter.
+- **Page** (on by default): sends the page title, URL, any selected text, and the *rendered* text of the page (`document.body.innerText`, which is what's visible, without scripts or markup), capped at 30k characters.
+- **Screenshot** (off by default): also sends a PNG of the visible part of the tab as an `image_url`. Use this with a vision-capable model when layout or images matter.
 
 The context is read again on every message, so it always matches the tab you're on. Chrome doesn't let extensions read some pages, such as `chrome://` pages, the Web Store and the built-in PDF viewer. On those, the panel answers without page context and shows a notice.
 
@@ -46,12 +46,12 @@ Each tab has its own conversation. When you switch tabs, the panel shows that ta
 - History lasts for the browser session. It's deleted when you close the tab or restart the browser.
 - Each tab keeps only its latest 100 messages (`MAX_HISTORY` in `sidepanel.js`).
 - History is text only. Page content and screenshots are sent with each message but aren't saved.
-- **Clear chat** (⟲) deletes the current tab's history.
+- **Clear chat** (the circular-arrow icon) deletes the current tab's history.
 - A reply keeps streaming if you switch tabs. Switch back to see it finish. Each tab can have its own reply in progress.
 
 ## Replies
 
-Replies are shown as Markdown: headings, lists, code blocks, tables, links, bold and italic. Links open in a new tab and only `http`, `https` and `mailto` links are kept. Images in replies are shown as links, so the panel never loads remote images.
+Replies are shown as Markdown: headings, lists, code blocks, tables, links, bold and italic. Turn the **Markdown** toggle (on by default, remembered) off to see the raw text instead. Hover a reply to copy its text. Links open in a new tab and only `http`, `https` and `mailto` links are kept. Images in replies are shown as links, so the panel never loads remote images.
 
 ## Files
 
