@@ -12,6 +12,7 @@ const MAX_HISTORY = 100; // messages per tab (50 user/assistant pairs)
 const $ = (id) => document.getElementById(id);
 const els = {
     pageTitle: $("page-title"),
+    pageHost: $("page-host"),
     settingsBtn: $("settings-btn"),
     clearBtn: $("clear-btn"),
     settings: $("settings"),
@@ -19,9 +20,11 @@ const els = {
     apiKey: $("api-key"),
     model: $("model"),
     settingsStatus: $("settings-status"),
+    settingsCancel: $("settings-cancel"),
+    emptyTpl: $("empty-tpl"),
     messages: $("messages"),
-    includePage: $("include-page"),
     includeShot: $("include-shot"),
+    markdown: $("markdown"),
     input: $("input"),
     sendBtn: $("send-btn"),
     stopBtn: $("stop-btn"),
@@ -68,7 +71,7 @@ function clearHistory(tabId) {
 }
 
 function renderHistory() {
-    els.messages.innerHTML = '<div class="empty">Ask anything about the current page.</div>';
+    els.messages.replaceChildren(els.emptyTpl.content.cloneNode(true));
     for (const m of history) addMessage(m.role, m.content);
 
     // A reply may still be streaming for this tab: show it and keep it updating here.
@@ -91,12 +94,23 @@ function stopStream(tabId, { discard = false } = {}) {
     stream.controller.abort();
 }
 
+function hostOf(url) {
+    try {
+        const u = new URL(url);
+        return u.protocol.startsWith("http") ? u.hostname : u.protocol.replace(":", "");
+    } catch {
+        return "";
+    }
+}
+
 // Point the panel at the active tab: update the title and show that tab's chat.
 async function syncToActiveTab() {
     const tab = await getActiveTab();
     const title = tab?.title || tab?.url || "No page";
     els.pageTitle.textContent = title;
-    els.pageTitle.title = tab?.url || "";
+    els.pageTitle.title = title;
+    els.pageHost.textContent = hostOf(tab?.url);
+    els.pageHost.title = tab?.url || "";
 
     if (!tab || tab.id === currentTabId) return;
     currentTabId = tab.id;
@@ -142,7 +156,13 @@ async function loadSettings() {
     els.baseUrl.value = settings.baseUrl;
     els.apiKey.value = settings.apiKey;
     els.model.value = settings.model;
-    if (!settings.apiKey) els.settings.hidden = false;
+    if (!settings.apiKey) showSettings(true);
+}
+
+function showSettings(show) {
+    els.settings.hidden = !show;
+    els.settingsBtn.setAttribute("aria-expanded", String(show));
+    if (show) els.baseUrl.focus();
 }
 
 els.settings.addEventListener("submit", async (e) => {
@@ -157,12 +177,39 @@ els.settings.addEventListener("submit", async (e) => {
     els.settingsStatus.textContent = "Saved.";
     setTimeout(() => {
         els.settingsStatus.textContent = "";
-        els.settings.hidden = true;
-    }, 1500);
+        showSettings(false);
+    }, 1200);
 });
 
-els.settingsBtn.addEventListener("click", () => {
-    els.settings.hidden = !els.settings.hidden;
+els.settingsBtn.addEventListener("click", () => showSettings(els.settings.hidden));
+els.settingsCancel.addEventListener("click", () => showSettings(false));
+els.settings.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") showSettings(false);
+});
+
+// ---------- Send Screenshot / Render Markdown ----------
+// Both remembered in storage.local, separately from the API settings. On by default.
+
+// Options the user changed before the saved values loaded; those clicks win.
+const touched = new Set();
+
+async function loadOptionPrefs() {
+    const { markdown = true, screenshot = true } =
+        await chrome.storage.local.get(["markdown", "screenshot"]);
+    if (!touched.has("markdown")) els.markdown.checked = markdown;
+    if (!touched.has("screenshot")) els.includeShot.checked = screenshot;
+    rerenderReplies();
+}
+
+els.markdown.addEventListener("change", () => {
+    touched.add("markdown");
+    chrome.storage.local.set({ markdown: els.markdown.checked });
+    rerenderReplies();
+});
+
+els.includeShot.addEventListener("change", () => {
+    touched.add("screenshot");
+    chrome.storage.local.set({ screenshot: els.includeShot.checked });
 });
 
 // ---------- Current tab ----------
@@ -188,15 +235,78 @@ function buildSystemPrompt(page) {
 
 // ---------- Messages UI ----------
 
+// Raw text of each assistant bubble, so it can be re-rendered or copied.
+const replyText = new WeakMap();
+
 function addMessage(role, text, extraClass = "") {
     els.messages.querySelector(".empty")?.remove();
     const div = document.createElement("div");
     div.className = `msg ${role} ${extraClass}`.trim();
-    if (role === "assistant") renderMarkdown(text, div);
-    else div.textContent = text;
+    // Screen readers wait for a streaming reply to finish before reading it.
+    if (extraClass.includes("pending")) div.setAttribute("aria-busy", "true");
+    if (role === "assistant") {
+        const content = document.createElement("div");
+        content.className = "content";
+        div.append(content, replyActions(div));
+        renderReply(div, text);
+    } else if (role === "user") {
+        // Wrapped in a span so the highlight follows the text across lines.
+        const mark = document.createElement("span");
+        mark.className = "mark";
+        mark.textContent = text;
+        div.append(mark);
+    } else {
+        div.textContent = text;
+    }
     els.messages.appendChild(div);
     scrollToBottom();
     return div;
+}
+
+// Render a reply as Markdown or plain text, depending on the toggle.
+function renderReply(bubble, text) {
+    replyText.set(bubble, text);
+    const content = bubble.querySelector(".content");
+    if (!content) return; // bubble was replaced by an error
+    const md = els.markdown.checked;
+    content.className = `content ${md ? "md" : "plain"}`;
+    if (md) renderMarkdown(text, content);
+    else content.textContent = text;
+}
+
+function rerenderReplies() {
+    for (const bubble of els.messages.querySelectorAll(".msg.assistant")) {
+        if (replyText.has(bubble)) renderReply(bubble, replyText.get(bubble));
+    }
+}
+
+const COPY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const CHECK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+function replyActions(bubble) {
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.title = "Copy reply";
+    copy.innerHTML = `${COPY_ICON}<span>Copy</span>`; // static markup, no model text
+    copy.addEventListener("click", async () => {
+        try {
+            await navigator.clipboard.writeText(replyText.get(bubble) || "");
+            copy.innerHTML = `${CHECK_ICON}<span>Copied</span>`;
+        } catch {
+            copy.lastChild.textContent = "Copy failed";
+        }
+        setTimeout(() => (copy.innerHTML = `${COPY_ICON}<span>Copy</span>`), 1500);
+    });
+    actions.append(copy);
+    return actions;
+}
+
+// Grow the message box with its text, up to the CSS max-height.
+function autosize() {
+    els.input.style.height = "auto";
+    els.input.style.height = `${els.input.scrollHeight}px`;
 }
 
 function scrollToBottom() {
@@ -208,6 +318,16 @@ function setBusy(busy) {
     els.stopBtn.hidden = !busy;
     els.input.disabled = busy;
 }
+
+// Starter prompts in the empty chat.
+els.messages.addEventListener("click", (e) => {
+    const btn = e.target.closest(".suggestion");
+    if (!btn) return;
+    // Keep anything already typed (such as a quoted selection) and add the prompt below it.
+    const draft = els.input.value.trimEnd();
+    els.input.value = draft ? `${draft}\n\n${btn.textContent}` : btn.textContent;
+    send();
+});
 
 els.clearBtn.addEventListener("click", () => {
     stopStream(currentTabId, { discard: true });
@@ -222,10 +342,14 @@ els.clearBtn.addEventListener("click", () => {
 // ---------- Sending ----------
 
 async function send() {
+    // Don't send until the saved options and the active tab are known, so a
+    // quick first message uses the saved Send Screenshot choice and is saved
+    // to the right tab.
+    await ready;
     const text = els.input.value.trim();
     if (!text || streams.has(currentTabId)) return;
     if (!settings.apiKey || !settings.baseUrl || !settings.model) {
-        els.settings.hidden = false;
+        showSettings(true);
         addMessage("notice", "Set the base URL, API key and model first.");
         return;
     }
@@ -245,7 +369,8 @@ async function send() {
     streams.set(tabId, stream);
 
     els.input.value = "";
-    addMessage("user", text);
+    autosize();
+    addMessage("user", text, "fresh");
     stream.bubble = addMessage("assistant", "", "pending");
     setBusy(true);
 
@@ -263,18 +388,24 @@ async function send() {
     // tab's if the panel is loading this tab's history right after a switch.
     const convo = tabId == null ? history : await loadHistory(tabId);
 
-    const tab = await getActiveTab();
+    // Read the tab this question belongs to, which may no longer be the active one.
+    const tab = tabId == null
+        ? await getActiveTab()
+        : await chrome.tabs.get(tabId).catch(() => null);
     let page = null;
     let screenshot = null;
 
-    if (els.includePage.checked && tab) {
+    if (tab) {
         try {
             page = await getPageContext(tab);
         } catch (err) {
             notice(`Can't read this page (${err.message}). Answering without it.`);
         }
     }
-    if (els.includeShot.checked && tab) {
+    if (els.includeShot.checked && tab && !tab.active) {
+        // captureVisibleTab can only see the active tab.
+        notice("Skipped the screenshot because you switched tabs.");
+    } else if (els.includeShot.checked && tab) {
         try {
             screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
         } catch (err) {
@@ -282,24 +413,25 @@ async function send() {
         }
     }
 
-    const userContent = screenshot
-        ? [
-            { type: "text", text },
-            { type: "image_url", image_url: { url: screenshot } },
-        ]
-        : text;
-
-    const messages = [
+    const buildMessages = (withScreenshot) => [
         { role: "system", content: buildSystemPrompt(page) },
         ...convo,
-        { role: "user", content: userContent },
+        {
+            role: "user",
+            content: withScreenshot
+                ? [
+                    { type: "text", text },
+                    { type: "image_url", image_url: { url: screenshot } },
+                ]
+                : text,
+        },
     ];
 
     // Re-render the Markdown at most once per frame while chunks arrive.
     const render = () => {
         cancelAnimationFrame(stream.frame);
         stream.frame = 0;
-        renderMarkdown(stream.reply, stream.bubble);
+        renderReply(stream.bubble, stream.reply);
         if (stream.bubble.isConnected) scrollToBottom();
     };
 
@@ -312,11 +444,21 @@ async function send() {
         saved.push({ role: "user", content: text }, { role: "assistant", content: stream.reply });
     };
 
+    const onDelta = (delta) => {
+        stream.reply += delta;
+        if (!stream.frame) stream.frame = requestAnimationFrame(render);
+    };
+
     try {
-        await streamChat(messages, stream.controller.signal, (delta) => {
-            stream.reply += delta;
-            if (!stream.frame) stream.frame = requestAnimationFrame(render);
-        });
+        try {
+            await streamChat(buildMessages(Boolean(screenshot)), stream.controller.signal, onDelta);
+        } catch (err) {
+            // Many models don't take images and reject the whole request.
+            // Ask again with the page text only, and say why.
+            if (!screenshot || stream.reply || !rejectsInput(err)) throw err;
+            notice("This model doesn't accept screenshots, so it answered from the page text only. Uncheck Send Screenshot to skip this.");
+            await streamChat(buildMessages(false), stream.controller.signal, onDelta);
+        }
         render();
         record();
     } catch (err) {
@@ -325,15 +467,16 @@ async function send() {
             const stopped = document.createElement("div");
             stopped.className = "stopped";
             stopped.textContent = "(stopped)";
-            stream.bubble.append(stopped);
+            stream.bubble.querySelector(".actions").before(stopped);
             if (stream.reply) record();
         } else {
             cancelAnimationFrame(stream.frame);
-            stream.bubble.classList.add("error");
+            stream.bubble.className = "msg error";
             stream.bubble.textContent = err.message;
         }
     } finally {
         stream.bubble.classList.remove("pending");
+        stream.bubble.removeAttribute("aria-busy");
         if (streams.get(tabId) === stream) streams.delete(tabId);
         if (tabId === currentTabId && !streams.has(tabId)) {
             setBusy(false);
@@ -341,6 +484,14 @@ async function send() {
         }
     }
     if (tabId != null && saved) saveHistory(tabId, saved);
+}
+
+// Request errors that can mean "this model can't take this input" (an image),
+// as opposed to auth, rate limit or server errors, which a retry won't fix.
+const INPUT_REJECTED = new Set([400, 404, 413, 415, 422]);
+
+function rejectsInput(err) {
+    return INPUT_REJECTED.has(err.status);
 }
 
 // POST {baseUrl}/chat/completions with stream: true and parse the SSE stream.
@@ -358,7 +509,9 @@ async function streamChat(messages, signal, onDelta) {
 
     if (!res.ok) {
         const body = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status} ${res.statusText}\n${body}`.trim());
+        const err = new Error(`HTTP ${res.status} ${res.statusText}\n${body}`.trim());
+        err.status = res.status;
+        throw err;
     }
 
     const reader = res.body.getReader();
@@ -384,7 +537,11 @@ async function streamChat(messages, signal, onDelta) {
             } catch {
                 continue;
             }
-            if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
+            if (json.error) {
+                const err = new Error(json.error.message || JSON.stringify(json.error));
+                err.status = Number(json.error.code) || undefined;
+                throw err;
+            }
             const delta = json.choices?.[0]?.delta?.content;
             if (delta) {
                 full += delta;
@@ -397,6 +554,7 @@ async function streamChat(messages, signal, onDelta) {
 
 els.sendBtn.addEventListener("click", send);
 els.stopBtn.addEventListener("click", () => stopStream(currentTabId));
+els.input.addEventListener("input", autosize);
 els.input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
@@ -426,6 +584,7 @@ async function takePendingAsk() {
     els.input.value = draft ? `${draft}\n\n${quote}\n\n` : `${quote}\n\n`;
     els.input.focus();
     els.input.setSelectionRange(els.input.value.length, els.input.value.length);
+    autosize();
     els.input.scrollTop = els.input.scrollHeight;
 }
 
@@ -435,6 +594,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (added) takePendingAsk();
 });
 
+renderHistory();
 loadSettings();
-syncToActiveTab();
+const ready = Promise.all([loadOptionPrefs(), syncToActiveTab()]).catch(() => {});
 takePendingAsk();
